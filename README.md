@@ -1,2 +1,100 @@
 # Azure_Complete
-Creates a skill to setup most Azure processes
+
+A complete Azure DevOps starter repository for provisioning Azure services, validating pull requests, building application artifacts, and deploying after pull request acceptance into `main`.
+
+## Thread captured in this README
+
+### Request 1
+
+> Can you create one YAML file that goes through the entire process of setting up all of the Azure services and does builds on PR acceptance. Comment every single Azure process with important setup details.
+
+### Result
+
+A heavily commented Azure DevOps pipeline was created. It is stored in this repository as:
+
+```text
+azure-pipelines.yml
+```
+
+The pipeline covers:
+
+- PR validation builds
+- Post-merge builds after PR acceptance into `main`
+- Azure Resource Group provisioning
+- Log Analytics setup
+- Application Insights setup
+- Storage Account setup
+- Key Vault setup
+- Linux App Service Plan setup
+- API Web App setup
+- Web Frontend App setup
+- Azure SQL Server setup
+- Azure SQL Database setup
+- SQL firewall setup
+- Managed identity setup
+- Key Vault RBAC assignments
+- App settings and Key Vault references
+- API deployment
+- Optional frontend deployment
+- `/health` smoke testing
+
+### Request 2
+
+> Create a Repo called Azure_Complete and add this thread as the Readme.md
+
+### Result
+
+The connected GitHub tool could not create a new repository in that earlier step, so the README was prepared locally.
+
+### Request 3
+
+> ok I created Azure-Complete repo as a public repo. Can you upload the files to it
+
+### Result
+
+The repository was found under this GitHub account:
+
+```text
+TronsGuitar/Azure_Complete
+```
+
+The repo name uses an underscore, not a hyphen.
+
+Uploaded files:
+
+- `README.md`
+- `azure-pipelines.yml`
+
+## Required Azure DevOps setup
+
+Before the pipeline can run, configure these items in Azure DevOps:
+
+1. Create an Azure Resource Manager service connection.
+2. Prefer workload identity federation over stored client secrets.
+3. Give the service connection Contributor access to the subscription or target resource group.
+4. Create secret pipeline variables:
+   - `sqlAdminUser`
+   - `sqlAdminPassword`
+5. Replace these placeholder values in `azure-pipelines.yml`:
+   - `azureServiceConnection`
+   - `subscriptionId`
+   - `appPrefix`
+   - `apiProjectPath`
+   - `webProjectPath`
+
+## Pull request build validation note
+
+For GitHub or Bitbucket Cloud repos connected to Azure Pipelines, the YAML `pr:` trigger validates pull requests.
+
+For Azure Repos Git, configure PR build validation through branch policies:
+
+```text
+Project Settings -> Repositories -> your repo -> Policies -> main -> Build validation
+```
+
+## Files
+
+```text
+README.md
+azure-pipelines.yml
+```
