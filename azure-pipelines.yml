@@ -1,0 +1,323 @@
+# azure-pipelines.yml
+#
+# Complete Azure DevOps pipeline example.
+#
+# Flow:
+#   1. Validate pull requests with restore, build, test, and package steps.
+#   2. Run provisioning only after code merges into main.
+#   3. Create Azure infrastructure with Azure CLI.
+#   4. Deploy API and optional frontend packages to Azure App Service.
+#
+# Setup required before first run:
+#   1. Create an Azure Resource Manager service connection in Azure DevOps.
+#   2. Prefer Workload Identity Federation over stored client secrets.
+#   3. Grant Contributor to the target subscription or resource group.
+#   4. Add secret pipeline variables named sqlAdminUser and sqlAdminPassword.
+#   5. Replace the YOUR-* placeholders below.
+#
+# PR trigger note:
+#   GitHub and Bitbucket Cloud repos can use the pr: block below.
+#   Azure Repos Git requires branch policy build validation instead.
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - docs/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - docs/*
+
+variables:
+  azureServiceConnection: 'YOUR-AZURE-RM-SERVICE-CONNECTION-NAME'
+  subscriptionId: 'YOUR-AZURE-SUBSCRIPTION-ID'
+  location: 'eastus'
+  appPrefix: 'myappdev'
+  environmentName: 'dev'
+  resourceGroupName: 'rg-$(appPrefix)-$(environmentName)'
+  logAnalyticsName: 'log-$(appPrefix)-$(environmentName)'
+  appInsightsName: 'appi-$(appPrefix)-$(environmentName)'
+  appServicePlanName: 'asp-$(appPrefix)-$(environmentName)'
+  apiWebAppName: 'app-$(appPrefix)-api-$(environmentName)'
+  webFrontendAppName: 'app-$(appPrefix)-web-$(environmentName)'
+  keyVaultName: 'kv-$(appPrefix)-$(environmentName)'
+  storageAccountName: 'st$(appPrefix)$(environmentName)'
+  sqlServerName: 'sql-$(appPrefix)-$(environmentName)'
+  sqlDatabaseName: 'sqldb-$(appPrefix)-$(environmentName)'
+  buildConfiguration: 'Release'
+  dotnetSdkVersion: '8.x'
+  solutionPath: '**/*.sln'
+  apiProjectPath: 'src/Api/Api.csproj'
+  testProjectPath: 'tests/**/*.csproj'
+  webProjectPath: 'src/Web'
+  webBuildOutputPath: 'dist'
+  linuxFxVersion: 'DOTNETCORE|8.0'
+
+stages:
+  - stage: Validate
+    displayName: 'Validate PR or commit'
+    jobs:
+      - job: BuildAndTest
+        displayName: 'Restore, build, test, and package'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            clean: true
+
+          # Install .NET SDK.
+          # Pinning the SDK keeps builds repeatable across hosted agent updates.
+          - task: UseDotNet@2
+            displayName: 'Install .NET SDK'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetSdkVersion)'
+
+          # Restore dependencies.
+          # Add NuGetAuthenticate@1 first when using private package feeds.
+          - task: DotNetCoreCLI@2
+            displayName: 'Restore .NET dependencies'
+            inputs:
+              command: 'restore'
+              projects: '$(solutionPath)'
+
+          # Build solution.
+          # Uses --no-restore because restore already ran.
+          - task: DotNetCoreCLI@2
+            displayName: 'Build .NET solution'
+            inputs:
+              command: 'build'
+              projects: '$(solutionPath)'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          # Run tests and publish test results.
+          # Code coverage collection works for many .NET test projects.
+          - task: DotNetCoreCLI@2
+            displayName: 'Run .NET tests'
+            inputs:
+              command: 'test'
+              projects: '$(testProjectPath)'
+              arguments: '--configuration $(buildConfiguration) --no-build --collect "Code Coverage"'
+              publishTestResults: true
+
+          # Publish the API as a deployable zip package.
+          # Update apiProjectPath to match your API project.
+          - task: DotNetCoreCLI@2
+            displayName: 'Publish API project'
+            inputs:
+              command: 'publish'
+              publishWebProjects: false
+              projects: '$(apiProjectPath)'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/api'
+              zipAfterPublish: true
+
+          # Build optional frontend.
+          # Runs only if package.json exists. Works for Angular, React, Vue, and similar Node apps.
+          - bash: |
+              set -euo pipefail
+              if [ -f "$(Build.SourcesDirectory)/$(webProjectPath)/package.json" ]; then
+                cd "$(Build.SourcesDirectory)/$(webProjectPath)"
+                npm ci
+                npm run build
+                mkdir -p "$(Build.ArtifactStagingDirectory)/web"
+                cd "$(webBuildOutputPath)"
+                zip -r "$(Build.ArtifactStagingDirectory)/web/web.zip" .
+              else
+                echo "No frontend package.json found. Skipping frontend build."
+                mkdir -p "$(Build.ArtifactStagingDirectory)/web"
+              fi
+            displayName: 'Build optional web frontend'
+
+          # Publish build artifacts for the Deploy stage.
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish API artifact'
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)/api'
+              artifact: 'api'
+              publishLocation: 'pipeline'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish web artifact folder'
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)/web'
+              artifact: 'web'
+              publishLocation: 'pipeline'
+
+  - stage: Provision
+    displayName: 'Provision Azure services'
+    dependsOn: Validate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: CreateOrUpdateAzureResources
+        displayName: 'Create or update Azure resources with Azure CLI'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          # AzureCLI@2 authenticates with the Azure Resource Manager service connection.
+          # Each service uses show or create logic so reruns do not break existing resources.
+          - task: AzureCLI@2
+            displayName: 'Provision Azure services'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -euo pipefail
+                az account set --subscription "$(subscriptionId)"
+
+                # Resource Group: Container for all environment resources.
+                az group create --name "$(resourceGroupName)" --location "$(location)"
+
+                # Log Analytics: Central workspace for operational logs and App Insights storage.
+                az monitor log-analytics workspace show --resource-group "$(resourceGroupName)" --workspace-name "$(logAnalyticsName)" >/dev/null 2>&1 \
+                  || az monitor log-analytics workspace create --resource-group "$(resourceGroupName)" --workspace-name "$(logAnalyticsName)" --location "$(location)"
+
+                WORKSPACE_ID=$(az monitor log-analytics workspace show --resource-group "$(resourceGroupName)" --workspace-name "$(logAnalyticsName)" --query id --output tsv)
+
+                # Application Insights: Request, exception, dependency, trace, and performance telemetry.
+                az monitor app-insights component show --app "$(appInsightsName)" --resource-group "$(resourceGroupName)" >/dev/null 2>&1 \
+                  || az monitor app-insights component create --app "$(appInsightsName)" --location "$(location)" --resource-group "$(resourceGroupName)" --workspace "$WORKSPACE_ID" --application-type web
+
+                APPINSIGHTS_CONNECTION_STRING=$(az monitor app-insights component show --app "$(appInsightsName)" --resource-group "$(resourceGroupName)" --query connectionString --output tsv)
+
+                # Storage Account: Blob, queue, and file storage. Name must be globally unique.
+                az storage account show --resource-group "$(resourceGroupName)" --name "$(storageAccountName)" >/dev/null 2>&1 \
+                  || az storage account create --resource-group "$(resourceGroupName)" --name "$(storageAccountName)" --location "$(location)" --sku Standard_LRS --kind StorageV2 --https-only true --allow-blob-public-access false --min-tls-version TLS1_2
+
+                # Key Vault: Secret and certificate store. RBAC mode supports modern role assignments.
+                az keyvault show --resource-group "$(resourceGroupName)" --name "$(keyVaultName)" >/dev/null 2>&1 \
+                  || az keyvault create --resource-group "$(resourceGroupName)" --name "$(keyVaultName)" --location "$(location)" --enable-rbac-authorization true --retention-days 90 --enable-purge-protection true
+
+                # App Service Plan: Compute tier for hosted apps. B1 is low-cost; Premium is better for production.
+                az appservice plan show --resource-group "$(resourceGroupName)" --name "$(appServicePlanName)" >/dev/null 2>&1 \
+                  || az appservice plan create --resource-group "$(resourceGroupName)" --name "$(appServicePlanName)" --location "$(location)" --is-linux --sku B1
+
+                # API Web App: Linux App Service host for ASP.NET Core API.
+                az webapp show --resource-group "$(resourceGroupName)" --name "$(apiWebAppName)" >/dev/null 2>&1 \
+                  || az webapp create --resource-group "$(resourceGroupName)" --plan "$(appServicePlanName)" --name "$(apiWebAppName)" --runtime "$(linuxFxVersion)"
+                az webapp identity assign --resource-group "$(resourceGroupName)" --name "$(apiWebAppName)"
+                API_PRINCIPAL_ID=$(az webapp identity show --resource-group "$(resourceGroupName)" --name "$(apiWebAppName)" --query principalId --output tsv)
+
+                # Frontend Web App: Host for compiled web frontend assets or Node app.
+                az webapp show --resource-group "$(resourceGroupName)" --name "$(webFrontendAppName)" >/dev/null 2>&1 \
+                  || az webapp create --resource-group "$(resourceGroupName)" --plan "$(appServicePlanName)" --name "$(webFrontendAppName)" --runtime "NODE|20-lts"
+                az webapp identity assign --resource-group "$(resourceGroupName)" --name "$(webFrontendAppName)"
+                WEB_PRINCIPAL_ID=$(az webapp identity show --resource-group "$(resourceGroupName)" --name "$(webFrontendAppName)" --query principalId --output tsv)
+
+                # Azure SQL Server: Logical SQL host. Prefer Entra auth and private endpoints for production.
+                az sql server show --resource-group "$(resourceGroupName)" --name "$(sqlServerName)" >/dev/null 2>&1 \
+                  || az sql server create --resource-group "$(resourceGroupName)" --name "$(sqlServerName)" --location "$(location)" --admin-user "$(sqlAdminUser)" --admin-password "$(sqlAdminPassword)"
+
+                # Azure SQL Database: Application database. S0 is small paid tier; Basic costs less for light dev.
+                az sql db show --resource-group "$(resourceGroupName)" --server "$(sqlServerName)" --name "$(sqlDatabaseName)" >/dev/null 2>&1 \
+                  || az sql db create --resource-group "$(resourceGroupName)" --server "$(sqlServerName)" --name "$(sqlDatabaseName)" --service-objective S0 --backup-storage-redundancy Local
+
+                # SQL Firewall: Allows Azure services. Use private endpoints or scoped IP rules for production.
+                az sql server firewall-rule create --resource-group "$(resourceGroupName)" --server "$(sqlServerName)" --name AllowAzureServices --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0 >/dev/null 2>&1 || true
+
+                SQL_CONNECTION_STRING="Server=tcp:$(sqlServerName).database.windows.net,1433;Initial Catalog=$(sqlDatabaseName);Persist Security Info=False;User ID=$(sqlAdminUser);Password=$(sqlAdminPassword);Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+
+                # Key Vault secret: Stores SQL connection string outside source control.
+                az keyvault secret set --vault-name "$(keyVaultName)" --name "SqlConnectionString" --value "$SQL_CONNECTION_STRING" --output none
+
+                KEYVAULT_SCOPE=$(az keyvault show --resource-group "$(resourceGroupName)" --name "$(keyVaultName)" --query id --output tsv)
+
+                # Key Vault RBAC: Allows managed identities to read secrets.
+                az role assignment create --assignee "$API_PRINCIPAL_ID" --role "Key Vault Secrets User" --scope "$KEYVAULT_SCOPE" >/dev/null 2>&1 || true
+                az role assignment create --assignee "$WEB_PRINCIPAL_ID" --role "Key Vault Secrets User" --scope "$KEYVAULT_SCOPE" >/dev/null 2>&1 || true
+
+                SECRET_URI=$(az keyvault secret show --vault-name "$(keyVaultName)" --name "SqlConnectionString" --query id --output tsv)
+
+                # API settings: App Insights, environment, Key Vault database reference, run-from-package.
+                az webapp config appsettings set --resource-group "$(resourceGroupName)" --name "$(apiWebAppName)" --settings \
+                  "ASPNETCORE_ENVIRONMENT=$(environmentName)" \
+                  "ApplicationInsights__ConnectionString=$APPINSIGHTS_CONNECTION_STRING" \
+                  "ConnectionStrings__DefaultConnection=@Microsoft.KeyVault(SecretUri=$SECRET_URI)" \
+                  "WEBSITE_RUN_FROM_PACKAGE=1"
+
+                # Frontend settings: API URL and App Insights connection string.
+                az webapp config appsettings set --resource-group "$(resourceGroupName)" --name "$(webFrontendAppName)" --settings \
+                  "NODE_ENV=production" \
+                  "API_BASE_URL=https://$(apiWebAppName).azurewebsites.net" \
+                  "ApplicationInsights__ConnectionString=$APPINSIGHTS_CONNECTION_STRING" \
+                  "WEBSITE_RUN_FROM_PACKAGE=1"
+
+  - stage: Deploy
+    displayName: 'Deploy application'
+    dependsOn:
+      - Validate
+      - Provision
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployApiAndWeb
+        displayName: 'Deploy API and optional frontend'
+        environment: '$(environmentName)'
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: api
+                - download: current
+                  artifact: web
+
+                # Deploy API package to Linux App Service.
+                - task: AzureWebApp@1
+                  displayName: 'Deploy API to Azure App Service'
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    appType: 'webAppLinux'
+                    appName: '$(apiWebAppName)'
+                    package: '$(Pipeline.Workspace)/api/**/*.zip'
+                    runtimeStack: '$(linuxFxVersion)'
+
+                # Deploy frontend only when web.zip exists.
+                - bash: |
+                    set -euo pipefail
+                    if [ -f "$(Pipeline.Workspace)/web/web.zip" ]; then
+                      echo "##vso[task.setvariable variable=DeployWebFrontend]true"
+                    else
+                      echo "##vso[task.setvariable variable=DeployWebFrontend]false"
+                    fi
+                  displayName: 'Check for frontend deployment package'
+
+                - task: AzureWebApp@1
+                  displayName: 'Deploy frontend to Azure App Service'
+                  condition: eq(variables['DeployWebFrontend'], 'true')
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    appType: 'webAppLinux'
+                    appName: '$(webFrontendAppName)'
+                    package: '$(Pipeline.Workspace)/web/web.zip'
+                    runtimeStack: 'NODE|20-lts'
+
+                # Smoke test API health endpoint after deployment.
+                - bash: |
+                    set -euo pipefail
+                    API_URL="https://$(apiWebAppName).azurewebsites.net/health"
+                    for i in {1..12}; do
+                      STATUS_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" "$API_URL" || true)
+                      if [ "$STATUS_CODE" = "200" ]; then
+                        echo "API health check passed."
+                        exit 0
+                      fi
+                      echo "Health check attempt $i failed with status $STATUS_CODE."
+                      sleep 10
+                    done
+                    echo "API health check failed."
+                    cat /tmp/health.txt || true
+                    exit 1
+                  displayName: 'Smoke test API health endpoint'
