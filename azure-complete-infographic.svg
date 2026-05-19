@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+  <rect width="1200" height="1600" fill="#f8fafc"/>
+  <rect width="1200" height="170" fill="#0f172a"/>
+  <text x="60" y="75" font-family="Arial" font-size="46" font-weight="700" fill="#ffffff">Azure Complete</text>
+  <text x="60" y="125" font-family="Arial" font-size="24" fill="#cbd5e1">One Azure DevOps YAML for validation, provisioning, deployment, and health checks</text>
+
+  <rect x="70" y="220" width="1060" height="120" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="105" y="270" font-family="Arial" font-size="30" font-weight="700" fill="#0f172a">Pipeline purpose</text>
+  <text x="105" y="310" font-family="Arial" font-size="21" fill="#334155">Pull requests run safe build checks. Merges to main provision Azure resources and deploy the app.</text>
+
+  <rect x="120" y="410" width="420" height="210" rx="22" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+  <text x="150" y="465" font-family="Arial" font-size="28" font-weight="700" fill="#0f172a">1. Validate</text>
+  <text x="150" y="510" font-family="Arial" font-size="21" fill="#334155">Restore dependencies</text>
+  <text x="150" y="545" font-family="Arial" font-size="21" fill="#334155">Build the solution</text>
+  <text x="150" y="580" font-family="Arial" font-size="21" fill="#334155">Run tests</text>
+
+  <rect x="660" y="410" width="420" height="210" rx="22" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+  <text x="690" y="465" font-family="Arial" font-size="28" font-weight="700" fill="#0f172a">2. Package</text>
+  <text x="690" y="510" font-family="Arial" font-size="21" fill="#334155">Publish API zip</text>
+  <text x="690" y="545" font-family="Arial" font-size="21" fill="#334155">Build optional frontend</text>
+  <text x="690" y="580" font-family="Arial" font-size="21" fill="#334155">Publish pipeline artifacts</text>
+
+  <line x1="540" y1="515" x2="660" y2="515" stroke="#475569" stroke-width="5"/>
+  <polygon points="660,515 640,503 640,527" fill="#475569"/>
+
+  <rect x="120" y="720" width="960" height="300" rx="24" fill="#ecfdf5" stroke="#059669" stroke-width="3"/>
+  <text x="150" y="775" font-family="Arial" font-size="30" font-weight="700" fill="#0f172a">3. Provision Azure services</text>
+  <text x="150" y="825" font-family="Arial" font-size="21" fill="#334155">Resource Group, Log Analytics, Application Insights, Storage Account</text>
+  <text x="150" y="865" font-family="Arial" font-size="21" fill="#334155">Key Vault, App Service Plan, API Web App, Frontend Web App</text>
+  <text x="150" y="905" font-family="Arial" font-size="21" fill="#334155">Azure SQL Server, Azure SQL Database, SQL firewall rule</text>
+  <text x="150" y="945" font-family="Arial" font-size="21" fill="#334155">Managed identities and app settings</text>
+  <text x="150" y="985" font-family="Arial" font-size="18" fill="#64748b">This stage runs only after code lands in main.</text>
+
+  <line x1="600" y1="1020" x2="600" y2="1110" stroke="#475569" stroke-width="5"/>
+  <polygon points="600,1110 588,1090 612,1090" fill="#475569"/>
+
+  <rect x="120" y="1120" width="420" height="210" rx="22" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+  <text x="150" y="1175" font-family="Arial" font-size="28" font-weight="700" fill="#0f172a">4. Secure config</text>
+  <text x="150" y="1220" font-family="Arial" font-size="21" fill="#334155">Use Key Vault references</text>
+  <text x="150" y="1255" font-family="Arial" font-size="21" fill="#334155">Assign app identities</text>
+  <text x="150" y="1290" font-family="Arial" font-size="21" fill="#334155">Keep secrets out of Git</text>
+
+  <rect x="660" y="1120" width="420" height="210" rx="22" fill="#fce7f3" stroke="#db2777" stroke-width="3"/>
+  <text x="690" y="1175" font-family="Arial" font-size="28" font-weight="700" fill="#0f172a">5. Deploy</text>
+  <text x="690" y="1220" font-family="Arial" font-size="21" fill="#334155">Deploy API to App Service</text>
+  <text x="690" y="1255" font-family="Arial" font-size="21" fill="#334155">Deploy frontend when present</text>
+  <text x="690" y="1290" font-family="Arial" font-size="21" fill="#334155">Run /health smoke test</text>
+
+  <line x1="540" y1="1225" x2="660" y2="1225" stroke="#475569" stroke-width="5"/>
+  <polygon points="660,1225 640,1213 640,1237" fill="#475569"/>
+
+  <rect x="70" y="1400" width="1060" height="120" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="105" y="1450" font-family="Arial" font-size="28" font-weight="700" fill="#0f172a">Before first run</text>
+  <text x="105" y="1490" font-family="Arial" font-size="20" fill="#334155">Create the Azure service connection, add pipeline secrets, and replace placeholder names and project paths.</text>
+</svg>
