@@ -2,6 +2,10 @@
 
 A complete Azure DevOps starter repository for provisioning Azure services, validating pull requests, building application artifacts, and deploying after pull request acceptance into `main`.
 
+## Infographic
+
+![Azure Complete pipeline infographic](azure-complete-infographic.svg)
+
 ## Thread captured in this README
 
 ### Request 1
@@ -64,6 +68,15 @@ Uploaded files:
 
 - `README.md`
 - `azure-pipelines.yml`
+- `azure-complete-infographic.svg`
+
+### Request 4
+
+> can you create an infogram of what the azure file does and upload that as well
+
+### Result
+
+An SVG infographic was added to visually explain the pipeline flow.
 
 ## Required Azure DevOps setup
 
@@ -97,4 +110,5 @@ Project Settings -> Repositories -> your repo -> Policies -> main -> Build valid
 ```text
 README.md
 azure-pipelines.yml
+azure-complete-infographic.svg
 ```
